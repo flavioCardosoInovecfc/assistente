@@ -13,7 +13,7 @@ If exist "C:\assistente" (
 	rmdir /S/Q C:\tempassistente 
 )
 
-If NOT exist "C:\assistente" (
+If NOT exist "C:\assistente" ( 
 	
 	git clone https://github.com/flavioCardosoInovecfc/assistente.git
 	
