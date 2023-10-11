@@ -23,5 +23,6 @@ img/icoDesktop.png
 img/icoDesktop.ico
 img/detranPR.gif
 img/detranMG.gif
-chromedriver/chromedriver.exe
+chromedriver/
+selenium_stealth/
 assistente.bat
