@@ -27,3 +27,5 @@ chromedriver/chromedriver.exe
 chromedriver/chromedriver118.exe
 selenium_stealth/
 assistente.bat
+taxaMG.py
+imports.py
