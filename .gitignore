@@ -26,6 +26,11 @@ img/detranMG.gif
 chromedriver/chromedriver.exe
 chromedriver/chromedriver118.exe
 selenium_stealth/
+cache/
 assistente.bat
 taxaMG.py
 imports.py
+profile/
+functions copy.py
+taxaMG copy.py
+teste.py
