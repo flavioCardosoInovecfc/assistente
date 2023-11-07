@@ -17,14 +17,8 @@ requirements.txt
 view.py
 atualizador.py
 atualizador.spec
-img/icoWindow.png
-img/icoWindow.ico
-img/icoDesktop.png
-img/icoDesktop.ico
-img/detranPR.gif
-img/detranMG.gif
-chromedriver/chromedriver.exe
-chromedriver/chromedriver118.exe
+img/
+chromedriver/
 selenium_stealth/
 cache/
 assistente.bat
@@ -35,3 +29,7 @@ functions copy.py
 taxaMG copy.py
 teste.py
 .local-browsers/
+automatizacaoPRNew.py
+detranPr.code-workspace
+automatizacaoPR copy.py
+mydropbox.py
