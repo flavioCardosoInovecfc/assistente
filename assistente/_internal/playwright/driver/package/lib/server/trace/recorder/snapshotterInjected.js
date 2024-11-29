@@ -20,7 +20,7 @@ exports.frameSnapshotStreamer = frameSnapshotStreamer;
  * limitations under the License.
  */
 
-function frameSnapshotStreamer(snapshotStreamer) {
+function frameSnapshotStreamer(snapshotStreamer, removeNoScript) {
   // Communication with Playwright.
   if (window[snapshotStreamer]) return;
 
@@ -35,6 +35,7 @@ function frameSnapshotStreamer(snapshotStreamer) {
   const kTargetAttribute = '__playwright_target__';
   const kCustomElementsAttribute = '__playwright_custom_elements__';
   const kCurrentSrcAttribute = '__playwright_current_src__';
+  const kBoundingRectAttribute = '__playwright_bounding_rect__';
 
   // Symbols for our own info on Nodes/StyleSheets.
   const kSnapshotFrameId = Symbol('__playwright_snapshot_frameid_');
@@ -57,13 +58,11 @@ function frameSnapshotStreamer(snapshotStreamer) {
     }
   }
   class Streamer {
-    // To avoid invalidating due to our own reads.
-
     constructor() {
-      this._removeNoScript = true;
       this._lastSnapshotNumber = 0;
       this._staleStyleSheets = new Set();
       this._readingStyleSheet = false;
+      // To avoid invalidating due to our own reads.
       this._fakeBase = void 0;
       this._observer = void 0;
       const invalidateCSSGroupingRule = rule => {
@@ -114,10 +113,15 @@ function frameSnapshotStreamer(snapshotStreamer) {
       });
     }
     _refreshListeners() {
-      document.addEventListener('__playwright_target__', event => {
+      document.addEventListener('__playwright_mark_target__', event => {
         if (!event.detail) return;
         const callId = event.detail;
         event.composedPath()[0].__playwright_target__ = callId;
+      });
+      document.addEventListener('__playwright_unmark_target__', event => {
+        if (!event.detail) return;
+        const callId = event.detail;
+        if (event.composedPath()[0].__playwright_target__ === callId) delete event.composedPath()[0].__playwright_target__;
       });
     }
     _interceptNativeMethod(obj, method, cb) {
@@ -267,7 +271,7 @@ function frameSnapshotStreamer(snapshotStreamer) {
           const rel = (_getAttribute = node.getAttribute('rel')) === null || _getAttribute === void 0 ? void 0 : _getAttribute.toLowerCase();
           if (rel === 'preload' || rel === 'prefetch') return;
         }
-        if (this._removeNoScript && nodeName === 'NOSCRIPT') return;
+        if (removeNoScript && nodeName === 'NOSCRIPT') return;
         if (nodeName === 'META' && node.httpEquiv.toLowerCase() === 'content-security-policy') return;
         // Skip iframes which are inside document's head as they are not visible.
         // See https://github.com/microsoft/playwright/issues/12005.
@@ -349,6 +353,18 @@ function frameSnapshotStreamer(snapshotStreamer) {
             expectValue(kSelectedAttribute);
             expectValue(value);
             attrs[kSelectedAttribute] = value;
+          }
+          if (nodeName === 'CANVAS') {
+            const boundingRect = element.getBoundingClientRect();
+            const value = JSON.stringify({
+              left: boundingRect.left / window.innerWidth,
+              top: boundingRect.top / window.innerHeight,
+              right: boundingRect.right / window.innerWidth,
+              bottom: boundingRect.bottom / window.innerHeight
+            });
+            expectValue(kBoundingRectAttribute);
+            expectValue(value);
+            attrs[kBoundingRectAttribute] = value;
           }
           if (element.scrollTop) {
             expectValue(kScrollTopAttribute);
@@ -469,7 +485,7 @@ function frameSnapshotStreamer(snapshotStreamer) {
           height: window.innerHeight
         },
         url: location.href,
-        timestamp,
+        wallTime: Date.now(),
         collectionTime: 0
       };
       for (const sheet of this._staleStyleSheets) {
@@ -487,7 +503,7 @@ function frameSnapshotStreamer(snapshotStreamer) {
           contentType: 'text/css'
         });
       }
-      result.collectionTime = performance.now() - result.timestamp;
+      result.collectionTime = performance.now() - timestamp;
       return result;
     }
   }

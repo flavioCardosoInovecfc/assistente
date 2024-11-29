@@ -57,6 +57,12 @@ class DebugControllerDispatcher extends _dispatcher.Dispatcher {
       this._dispatchEvent('paused', {
         paused
       });
+    }), _utils.eventsHelper.addEventListener(this._object, _debugController.DebugController.Events.SetModeRequested, ({
+      mode
+    }) => {
+      this._dispatchEvent('setModeRequested', {
+        mode
+      });
     })];
   }
   async initialize(params) {
@@ -75,7 +81,7 @@ class DebugControllerDispatcher extends _dispatcher.Dispatcher {
     await this._object.setRecorderMode(params);
   }
   async highlight(params) {
-    await this._object.highlight(params.selector);
+    await this._object.highlight(params);
   }
   async hideHighlight() {
     await this._object.hideHighlight();

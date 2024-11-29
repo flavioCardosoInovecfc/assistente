@@ -8,7 +8,8 @@ var _processLauncher = require("../utils/processLauncher");
 var _instrumentation = require("./instrumentation");
 var _recorder = require("./recorder");
 var _recorderApp = require("./recorder/recorderApp");
-var _locatorGenerators = require("../utils/isomorphic/locatorGenerators");
+var _utils = require("../utils");
+var _ariaSnapshot = require("./ariaSnapshot");
 /**
  * Copyright (c) Microsoft Corporation.
  *
@@ -27,8 +28,6 @@ var _locatorGenerators = require("../utils/isomorphic/locatorGenerators");
 
 const internalMetadata = (0, _instrumentation.serverSideCallMetadata)();
 class DebugController extends _instrumentation.SdkObject {
-  // TODO: remove in 1.27
-
   constructor(playwright) {
     super({
       attribution: {
@@ -37,6 +36,7 @@ class DebugController extends _instrumentation.SdkObject {
       instrumentation: (0, _instrumentation.createInstrumentation)()
     }, undefined, 'DebugController');
     this._autoCloseTimer = void 0;
+    // TODO: remove in 1.27
     this._autoCloseAllowed = false;
     this._trackHierarchyListener = void 0;
     this._playwright = void 0;
@@ -47,7 +47,6 @@ class DebugController extends _instrumentation.SdkObject {
   initialize(codegenId, sdkLanguage) {
     this._codegenId = codegenId;
     this._sdkLanguage = sdkLanguage;
-    _recorder.Recorder.setAppFactory(async () => new InspectingRecorderApp(this));
   }
   setAutoCloseAllowed(allowed) {
     this._autoCloseAllowed = allowed;
@@ -55,7 +54,6 @@ class DebugController extends _instrumentation.SdkObject {
   dispose() {
     this.setReportStateChanged(false);
     this.setAutoCloseAllowed(false);
-    _recorder.Recorder.setAppFactory(undefined);
   }
   setReportStateChanged(enabled) {
     if (enabled && !this._trackHierarchyListener) {
@@ -107,7 +105,7 @@ class DebugController extends _instrumentation.SdkObject {
     // Toggle the mode.
     for (const recorder of await this._allRecorders()) {
       recorder.hideHighlightedSelector();
-      if (params.mode === 'recording') recorder.setOutput(this._codegenId, params.file);
+      if (params.mode !== 'inspecting') recorder.setOutput(this._codegenId, params.file);
       recorder.setMode(params.mode);
     }
     this.setAutoCloseEnabled(true);
@@ -121,8 +119,10 @@ class DebugController extends _instrumentation.SdkObject {
     };
     this._autoCloseTimer = setTimeout(heartBeat, 30000);
   }
-  async highlight(selector) {
-    for (const recorder of await this._allRecorders()) recorder.setHighlightedSelector(this._sdkLanguage, selector);
+  async highlight(params) {
+    for (const recorder of await this._allRecorders()) {
+      if (params.ariaTemplate) recorder.setHighlightedAriaTemplate((0, _ariaSnapshot.parseYamlForAriaSnapshot)(params.ariaTemplate));else if (params.selector) recorder.setHighlightedSelector(this._sdkLanguage, params.selector);
+    }
   }
   async hideHighlight() {
     // Hide all active recorder highlights.
@@ -140,7 +140,9 @@ class DebugController extends _instrumentation.SdkObject {
     (0, _processLauncher.gracefullyProcessExitDoNotHang)(0);
   }
   async closeAllBrowsers() {
-    await Promise.all(this.allBrowsers().map(browser => browser.close()));
+    await Promise.all(this.allBrowsers().map(browser => browser.close({
+      reason: 'Close all browsers requested'
+    })));
   }
   _emitSnapshot() {
     const browsers = [];
@@ -159,8 +161,6 @@ class DebugController extends _instrumentation.SdkObject {
         pageCount += context.pages().length;
       }
     }
-    // TODO: browsers is deprecated, remove it.
-    this.emit(DebugController.Events.BrowsersChanged, browsers);
     this.emit(DebugController.Events.StateChanged, {
       pageCount
     });
@@ -168,27 +168,31 @@ class DebugController extends _instrumentation.SdkObject {
   async _allRecorders() {
     const contexts = new Set();
     for (const page of this._playwright.allPages()) contexts.add(page.context());
-    const result = await Promise.all([...contexts].map(c => _recorder.Recorder.show(c, {
+    const result = await Promise.all([...contexts].map(c => _recorder.Recorder.showInspector(c, {
       omitCallTracking: true
-    })));
+    }, () => Promise.resolve(new InspectingRecorderApp(this)))));
     return result.filter(Boolean);
   }
   async _closeBrowsersWithoutPages() {
     for (const browser of this._playwright.allBrowsers()) {
       for (const context of browser.contexts()) {
-        if (!context.pages().length) await context.close((0, _instrumentation.serverSideCallMetadata)());
+        if (!context.pages().length) await context.close({
+          reason: 'Browser collected'
+        });
       }
-      if (!browser.contexts()) await browser.close();
+      if (!browser.contexts()) await browser.close({
+        reason: 'Browser collected'
+      });
     }
   }
 }
 exports.DebugController = DebugController;
 DebugController.Events = {
-  BrowsersChanged: 'browsersChanged',
   StateChanged: 'stateChanged',
   InspectRequested: 'inspectRequested',
   SourceChanged: 'sourceChanged',
-  Paused: 'paused'
+  Paused: 'paused',
+  SetModeRequested: 'setModeRequested'
 };
 class InspectingRecorderApp extends _recorderApp.EmptyRecorderApp {
   constructor(debugController) {
@@ -196,10 +200,10 @@ class InspectingRecorderApp extends _recorderApp.EmptyRecorderApp {
     this._debugController = void 0;
     this._debugController = debugController;
   }
-  async setSelector(selector) {
-    const locator = (0, _locatorGenerators.asLocator)(this._debugController._sdkLanguage, selector);
+  async elementPicked(elementInfo) {
+    const locator = (0, _utils.asLocator)(this._debugController._sdkLanguage, elementInfo.selector);
     this._debugController.emit(DebugController.Events.InspectRequested, {
-      selector,
+      selector: elementInfo.selector,
       locator
     });
   }
@@ -223,6 +227,11 @@ class InspectingRecorderApp extends _recorderApp.EmptyRecorderApp {
   async setPaused(paused) {
     this._debugController.emit(DebugController.Events.Paused, {
       paused
+    });
+  }
+  async setMode(mode) {
+    this._debugController.emit(DebugController.Events.SetModeRequested, {
+      mode
     });
   }
 }

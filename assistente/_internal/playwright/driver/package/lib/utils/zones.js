@@ -3,9 +3,8 @@
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-exports.runWithFinally = runWithFinally;
-exports.zones = void 0;
-var _stackTrace = require("./stackTrace");
+exports.zones = exports.Zone = void 0;
+var _async_hooks = require("async_hooks");
 /**
  * Copyright (c) Microsoft Corporation.
  *
@@ -24,77 +23,49 @@ var _stackTrace = require("./stackTrace");
 
 class ZoneManager {
   constructor() {
-    this.lastZoneId = 0;
-    this._zones = new Map();
+    this._asyncLocalStorage = new _async_hooks.AsyncLocalStorage();
   }
   run(type, data, func) {
-    return new Zone(this, ++this.lastZoneId, type, data).run(func);
+    const zone = Zone._createWithData(this._asyncLocalStorage, type, data);
+    return this._asyncLocalStorage.run(zone, func);
   }
-  zoneData(type, rawStack) {
-    for (const line of rawStack) {
-      for (const zoneId of zoneIds(line)) {
-        const zone = this._zones.get(zoneId);
-        if (zone && zone.type === type) return zone.data;
-      }
-    }
-    return null;
+  zoneData(type) {
+    const zone = this._asyncLocalStorage.getStore();
+    return zone === null || zone === void 0 ? void 0 : zone.get(type);
   }
-  preserve(callback) {
-    const rawStack = (0, _stackTrace.captureRawStack)();
-    const refs = [];
-    for (const line of rawStack) refs.push(...zoneIds(line));
-    Object.defineProperty(callback, 'name', {
-      value: `__PWZONE__[${refs.join(',')}]-refs`
-    });
-    return callback();
+  currentZone() {
+    var _this$_asyncLocalStor;
+    return (_this$_asyncLocalStor = this._asyncLocalStorage.getStore()) !== null && _this$_asyncLocalStor !== void 0 ? _this$_asyncLocalStor : Zone._createEmpty(this._asyncLocalStorage);
   }
-}
-function zoneIds(line) {
-  const index = line.indexOf('__PWZONE__[');
-  if (index === -1) return [];
-  return line.substring(index + '__PWZONE__['.length, line.indexOf(']', index)).split(',').map(s => +s);
+  exitZones(func) {
+    return this._asyncLocalStorage.run(undefined, func);
+  }
 }
 class Zone {
-  constructor(manager, id, type, data) {
-    this._manager = void 0;
-    this.id = void 0;
-    this.type = void 0;
-    this.data = void 0;
-    this.wallTime = void 0;
-    this._manager = manager;
-    this.id = id;
-    this.type = type;
-    this.data = data;
-    this.wallTime = Date.now();
+  static _createWithData(asyncLocalStorage, type, data) {
+    var _asyncLocalStorage$ge;
+    const store = new Map((_asyncLocalStorage$ge = asyncLocalStorage.getStore()) === null || _asyncLocalStorage$ge === void 0 ? void 0 : _asyncLocalStorage$ge._data);
+    store.set(type, data);
+    return new Zone(asyncLocalStorage, store);
+  }
+  static _createEmpty(asyncLocalStorage) {
+    return new Zone(asyncLocalStorage, new Map());
+  }
+  constructor(asyncLocalStorage, store) {
+    this._asyncLocalStorage = void 0;
+    this._data = void 0;
+    this._asyncLocalStorage = asyncLocalStorage;
+    this._data = store;
   }
   run(func) {
-    this._manager._zones.set(this.id, this);
-    Object.defineProperty(func, 'name', {
-      value: `__PWZONE__[${this.id}]-${this.type}`
-    });
-    return runWithFinally(() => func(this.data), () => {
-      this._manager._zones.delete(this.id);
-    });
+    // Reset apiZone and expectZone, but restore stepZone.
+    const entries = [...this._data.entries()].filter(([type]) => type !== 'apiZone' && type !== 'expectZone');
+    const resetZone = new Zone(this._asyncLocalStorage, new Map(entries));
+    return this._asyncLocalStorage.run(resetZone, func);
+  }
+  get(type) {
+    return this._data.get(type);
   }
 }
-function runWithFinally(func, finallyFunc) {
-  try {
-    const result = func();
-    if (result instanceof Promise) {
-      return result.then(r => {
-        finallyFunc();
-        return r;
-      }).catch(e => {
-        finallyFunc();
-        throw e;
-      });
-    }
-    finallyFunc();
-    return result;
-  } catch (e) {
-    finallyFunc();
-    throw e;
-  }
-}
-const zones = new ZoneManager();
-exports.zones = zones;
+exports.Zone = Zone;
+const zones = exports.zones = new ZoneManager();
