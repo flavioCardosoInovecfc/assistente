@@ -5,7 +5,9 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.getComparator = getComparator;
 var _utilsBundle = require("../utilsBundle");
+var _pixelmatch = _interopRequireDefault(require("../third_party/pixelmatch"));
 var _compare = require("../image_tools/compare");
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 /**
  * Copyright 2017 Google Inc. All rights reserved.
  * Modifications copyright (c) Microsoft Corporation.
@@ -23,13 +25,8 @@ var _compare = require("../image_tools/compare");
  * limitations under the License.
  */
 
-const pixelmatch = require('../third_party/pixelmatch');
-const {
-  diff_match_patch,
-  DIFF_INSERT,
-  DIFF_DELETE,
-  DIFF_EQUAL
-} = require('../third_party/diff_match_patch');
+// @ts-ignore
+
 function getComparator(mimeType) {
   if (mimeType === 'image/png') return compareImages.bind(null, 'image/png');
   if (mimeType === 'image/jpeg') return compareImages.bind(null, 'image/jpeg');
@@ -49,7 +46,7 @@ function compareBuffersOrStrings(actualBuffer, expectedBuffer) {
   return null;
 }
 function compareImages(mimeType, actualBuffer, expectedBuffer, options = {}) {
-  var _options$_comparator, _ref;
+  var _options$comparator, _ref;
   if (!actualBuffer || !(actualBuffer instanceof Buffer)) return {
     errorMessage: 'Actual result should be a Buffer.'
   };
@@ -75,19 +72,19 @@ function compareImages(mimeType, actualBuffer, expectedBuffer, options = {}) {
     height: size.height
   });
   let count;
-  if (options._comparator === 'ssim-cie94') {
+  if (options.comparator === 'ssim-cie94') {
     count = (0, _compare.compare)(expected.data, actual.data, diff.data, size.width, size.height, {
       // All ΔE* formulae are originally designed to have the difference of 1.0 stand for a "just noticeable difference" (JND).
       // See https://en.wikipedia.org/wiki/Color_difference#CIELAB_%CE%94E*
       maxColorDeltaE94: 1.0
     });
-  } else if (((_options$_comparator = options._comparator) !== null && _options$_comparator !== void 0 ? _options$_comparator : 'pixelmatch') === 'pixelmatch') {
+  } else if (((_options$comparator = options.comparator) !== null && _options$comparator !== void 0 ? _options$comparator : 'pixelmatch') === 'pixelmatch') {
     var _options$threshold;
-    count = pixelmatch(expected.data, actual.data, diff.data, size.width, size.height, {
+    count = (0, _pixelmatch.default)(expected.data, actual.data, diff.data, size.width, size.height, {
       threshold: (_options$threshold = options.threshold) !== null && _options$threshold !== void 0 ? _options$threshold : 0.2
     });
   } else {
-    throw new Error(`Configuration specifies unknown comparator "${options._comparator}"`);
+    throw new Error(`Configuration specifies unknown comparator "${options.comparator}"`);
   }
   const maxDiffPixels1 = options.maxDiffPixels;
   const maxDiffPixels2 = options.maxDiffPixelRatio !== undefined ? expected.width * expected.height * options.maxDiffPixelRatio : undefined;
@@ -116,32 +113,17 @@ function compareText(actual, expectedBuffer) {
   };
   const expected = expectedBuffer.toString('utf-8');
   if (expected === actual) return null;
-  const dmp = new diff_match_patch();
-  const d = dmp.diff_main(expected, actual);
-  dmp.diff_cleanupSemantic(d);
+  const diffs = _utilsBundle.diff.diffChars(expected, actual);
   return {
-    errorMessage: diff_prettyTerminal(d)
+    errorMessage: diff_prettyTerminal(diffs)
   };
 }
 function diff_prettyTerminal(diffs) {
-  const html = [];
-  for (let x = 0; x < diffs.length; x++) {
-    const op = diffs[x][0]; // Operation (insert, delete, equal)
-    const data = diffs[x][1]; // Text of change.
-    const text = data;
-    switch (op) {
-      case DIFF_INSERT:
-        html[x] = _utilsBundle.colors.green(text);
-        break;
-      case DIFF_DELETE:
-        html[x] = _utilsBundle.colors.reset(_utilsBundle.colors.strikethrough(_utilsBundle.colors.red(text)));
-        break;
-      case DIFF_EQUAL:
-        html[x] = text;
-        break;
-    }
-  }
-  return html.join('');
+  const result = diffs.map(part => {
+    const text = part.value;
+    if (part.added) return _utilsBundle.colors.green(text);else if (part.removed) return _utilsBundle.colors.reset(_utilsBundle.colors.strikethrough(_utilsBundle.colors.red(text)));else return text;
+  });
+  return result.join('');
 }
 function resizeImage(image, size) {
   if (image.width === size.width && image.height === size.height) return image;
