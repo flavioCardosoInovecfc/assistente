@@ -1,0 +1,13 @@
+1.  pyinstaller detranpr.py
+
+2. pyinstaller --noconsole --onefile --windowed --icon=img/icoDesktop.ico assistente.py
+
+   pyinstaller  --noconsole --icon=img/icoDesktop.ico assistente.py
+
+   pyinstaller  --icon=img/icoDesktop.ico assistente.py
+
+   pyinstaller --onefile --icon=img/icoDesktop.ico assistente.py
+
+
+   pyinstaller --icon=img/icoDesktop.ico --add-data "C:\Users\Flavio\AppData\Local\Programs\Python\Python311\Lib\site-packages\playwright_stealth\js;playwright_stealth/js" assistente.py
+
