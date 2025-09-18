@@ -1,0 +1,35 @@
+venv/
+__pycache__/
+.vscode/
+build/
+assistente.py
+assistente.spec
+automatizacaoPR.py
+banco.py
+consultarSituacapMG.py
+Deletargeral.py
+exe.txt
+functions.py
+inovecfc.db
+marcacaoExamePraticoMG.py
+README.md
+requirements.txt
+view.py
+atualizador.py
+atualizador.spec
+
+chromedriver/
+selenium_stealth/
+cache/
+assistente.bat
+taxaMG.py
+imports.py
+profile/
+functions copy.py
+taxaMG copy.py
+teste.py
+.local-browsers/
+automatizacaoPRNew.py
+detranPr.code-workspace
+automatizacaoPR copy.py
+mydropbox.py
