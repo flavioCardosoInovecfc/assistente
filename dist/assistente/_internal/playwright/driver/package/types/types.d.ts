@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 import { ChildProcess } from 'child_process';
-import { EventEmitter } from 'events';
 import { Readable } from 'stream';
 import { ReadStream } from 'fs';
 import { Protocol } from './protocol';
@@ -2566,6 +2565,12 @@ export interface Page {
     colorScheme?: null|"light"|"dark"|"no-preference";
 
     /**
+     * Emulates `'prefers-contrast'` media feature, supported values are `'no-preference'`, `'more'`. Passing `null`
+     * disables contrast emulation.
+     */
+    contrast?: null|"no-preference"|"more";
+
+    /**
      * Emulates `'forced-colors'` media feature, supported values are `'active'` and `'none'`. Passing `null` disables
      * forced colors emulation.
      */
@@ -3594,8 +3599,8 @@ export interface Page {
   opener(): Promise<null|Page>;
 
   /**
-   * Pauses script execution. Playwright will stop executing the script and wait for the user to either press 'Resume'
-   * button in the page overlay or to call `playwright.resume()` in the DevTools console.
+   * Pauses script execution. Playwright will stop executing the script and wait for the user to either press the
+   * 'Resume' button in the page overlay or to call `playwright.resume()` in the DevTools console.
    *
    * User can inspect selectors or perform manual steps while paused. Resume will continue running the original script
    * from the place it was paused.
@@ -3969,9 +3974,9 @@ export interface Page {
    *
    * **NOTE** Enabling routing disables http cache.
    *
-   * @param url A glob pattern, regex pattern or predicate receiving [URL] to match while routing. When a
-   * [`baseURL`](https://playwright.dev/docs/api/class-browser#browser-new-context-option-base-url) via the context
-   * options was provided and the passed URL is a path, it gets merged via the
+   * @param url A glob pattern, regex pattern, or predicate that receives a [URL] to match during routing. If
+   * [`baseURL`](https://playwright.dev/docs/api/class-browser#browser-new-context-option-base-url) is set in the
+   * context options and the provided URL is a string that does not start with `*`, it is resolved using the
    * [`new URL()`](https://developer.mozilla.org/en-US/docs/Web/API/URL/URL) constructor.
    * @param handler handler function to route the request.
    * @param options
@@ -8825,6 +8830,13 @@ export interface BrowserContext {
      * Optional.
      */
     sameSite?: "Strict"|"Lax"|"None";
+
+    /**
+     * For partitioned third-party cookies (aka
+     * [CHIPS](https://developer.mozilla.org/en-US/docs/Web/Privacy/Guides/Privacy_sandbox/Partitioned_cookies)), the
+     * partition key. Optional.
+     */
+    partitionKey?: string;
   }>): Promise<void>;
 
   /**
@@ -8835,7 +8847,8 @@ export interface BrowserContext {
   backgroundPages(): Array<Page>;
 
   /**
-   * Returns the browser instance of the context. If it was launched as a persistent context null gets returned.
+   * Gets the browser instance that owns the context. Returns `null` if the context is created outside of normal
+   * browser, e.g. Android or Electron.
    */
   browser(): null|Browser;
 
@@ -8980,6 +8993,7 @@ export interface BrowserContext {
    * - `'notifications'`
    * - `'payment-handler'`
    * - `'storage-access'`
+   * - `'local-fonts'`
    * @param options
    */
   grantPermissions(permissions: ReadonlyArray<string>, options?: {
@@ -9063,9 +9077,9 @@ export interface BrowserContext {
    *
    * **NOTE** Enabling routing disables http cache.
    *
-   * @param url A glob pattern, regex pattern or predicate receiving [URL] to match while routing. When a
-   * [`baseURL`](https://playwright.dev/docs/api/class-browser#browser-new-context-option-base-url) via the context
-   * options was provided and the passed URL is a path, it gets merged via the
+   * @param url A glob pattern, regex pattern, or predicate that receives a [URL] to match during routing. If
+   * [`baseURL`](https://playwright.dev/docs/api/class-browser#browser-new-context-option-base-url) is set in the
+   * context options and the provided URL is a string that does not start with `*`, it is resolved using the
    * [`new URL()`](https://developer.mozilla.org/en-US/docs/Web/API/URL/URL) constructor.
    * @param handler handler function to route the request.
    * @param options
@@ -9260,10 +9274,18 @@ export interface BrowserContext {
   setOffline(offline: boolean): Promise<void>;
 
   /**
-   * Returns storage state for this browser context, contains current cookies and local storage snapshot.
+   * Returns storage state for this browser context, contains current cookies, local storage snapshot and IndexedDB
+   * snapshot.
    * @param options
    */
   storageState(options?: {
+    /**
+     * Set to `true` to include [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API) in the storage
+     * state snapshot. If your application uses IndexedDB to store authentication tokens, like Firebase Authentication,
+     * enable this.
+     */
+    indexedDB?: boolean;
+
     /**
      * The file path to save the storage state to. If
      * [`path`](https://playwright.dev/docs/api/class-browsercontext#browser-context-storage-state-option-path) is a
@@ -9716,6 +9738,10 @@ export interface Browser {
      * `passphrase` property should be provided if the certificate is encrypted. The `origin` property should be provided
      * with an exact match to the request origin that the certificate is valid for.
      *
+     * Client certificate authentication is only active when at least one client certificate is provided. If you want to
+     * reject all client certificates sent by the server, you need to provide a client certificate with an `origin` that
+     * does not match any of the domains you plan to visit.
+     *
      * **NOTE** When using WebKit on macOS, accessing `localhost` will not pick up client certificates. You can make it
      * work by replacing `localhost` with `local.playwright`.
      *
@@ -9769,6 +9795,13 @@ export interface Browser {
      * Passing `null` resets emulation to system defaults. Defaults to `'light'`.
      */
     colorScheme?: null|"light"|"dark"|"no-preference";
+
+    /**
+     * Emulates `'prefers-contrast'` media feature, supported values are `'no-preference'`, `'more'`. See
+     * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#page-emulate-media) for more details.
+     * Passing `null` resets emulation to system defaults. Defaults to `'no-preference'`.
+     */
+    contrast?: null|"no-preference"|"more";
 
     /**
      * Specify device scale factor (can be thought of as dpr). Defaults to `1`. Learn more about
@@ -9862,6 +9895,7 @@ export interface Browser {
 
     /**
      * Logger sink for Playwright logging.
+     * @deprecated The logs received by the logger are incomplete. Please use tracing instead.
      */
     logger?: Logger;
 
@@ -10049,12 +10083,12 @@ export interface Browser {
         sameSite: "Strict"|"Lax"|"None";
       }>;
 
-      /**
-       * localStorage to set for context
-       */
       origins: Array<{
         origin: string;
 
+        /**
+         * localStorage to set for context
+         */
         localStorage: Array<{
           name: string;
 
@@ -11627,7 +11661,8 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
      * Specify locators that should be masked when the screenshot is taken. Masked elements will be overlaid with a pink
      * box `#FF00FF` (customized by
      * [`maskColor`](https://playwright.dev/docs/api/class-elementhandle#element-handle-screenshot-option-mask-color))
-     * that completely covers its bounding box.
+     * that completely covers its bounding box. The mask is also applied to invisible elements, see
+     * [Matching only visible elements](https://playwright.dev/docs/locators#matching-only-visible-elements) to disable that.
      */
     mask?: Array<Locator>;
 
@@ -12177,9 +12212,14 @@ export interface Locator {
    *
    * **Usage**
    *
+   * Passing argument to
+   * [`pageFunction`](https://playwright.dev/docs/api/class-locator#locator-evaluate-option-expression):
+   *
    * ```js
-   * const tweets = page.locator('.tweet .retweets');
-   * expect(await tweets.evaluate(node => node.innerText)).toBe('10 retweets');
+   * const result = await page.getByTestId('myId').evaluate((element, [x, y]) => {
+   *   return element.textContent + ' ' + x * y;
+   * }, [7, 8]);
+   * console.log(result); // prints "myId text 56"
    * ```
    *
    * @param pageFunction Function to be evaluated in the page context.
@@ -12208,9 +12248,14 @@ export interface Locator {
    *
    * **Usage**
    *
+   * Passing argument to
+   * [`pageFunction`](https://playwright.dev/docs/api/class-locator#locator-evaluate-option-expression):
+   *
    * ```js
-   * const tweets = page.locator('.tweet .retweets');
-   * expect(await tweets.evaluate(node => node.innerText)).toBe('10 retweets');
+   * const result = await page.getByTestId('myId').evaluate((element, [x, y]) => {
+   *   return element.textContent + ' ' + x * y;
+   * }, [7, 8]);
+   * console.log(result); // prints "myId text 56"
    * ```
    *
    * @param pageFunction Function to be evaluated in the page context.
@@ -12879,6 +12924,21 @@ export interface Locator {
   }): Promise<void>;
 
   /**
+   * Describes the locator, description is used in the trace viewer and reports. Returns the locator pointing to the
+   * same element.
+   *
+   * **Usage**
+   *
+   * ```js
+   * const button = page.getByTestId('btn-sub').describe('Subscribe button');
+   * await button.click();
+   * ```
+   *
+   * @param description Locator description.
+   */
+  describe(description: string): Locator;
+
+  /**
    * Programmatically dispatch an event on the matching element.
    *
    * **Usage**
@@ -13111,6 +13171,11 @@ export interface Locator {
      * `<article><div>Playwright</div></article>`.
      */
     hasText?: string|RegExp;
+
+    /**
+     * Only matches visible or invisible elements.
+     */
+    visible?: boolean;
   }): Locator;
 
   /**
@@ -14062,9 +14127,9 @@ export interface Locator {
    *
    * ```html
    * <select multiple>
-   *   <option value="red">Red</div>
-   *   <option value="green">Green</div>
-   *   <option value="blue">Blue</div>
+   *   <option value="red">Red</option>
+   *   <option value="green">Green</option>
+   *   <option value="blue">Blue</option>
    * </select>
    * ```
    *
@@ -14313,7 +14378,8 @@ export interface Locator {
   }): Promise<void>;
 
   /**
-   * Perform a tap gesture on the element matching the locator.
+   * Perform a tap gesture on the element matching the locator. For examples of emulating other gestures by manually
+   * dispatching touch events, see the [emulating legacy touch events](https://playwright.dev/docs/touch-events) page.
    *
    * **Details**
    *
@@ -14566,6 +14632,11 @@ export interface BrowserType<Unused = {}> {
    *
    * **NOTE** Connecting over the Chrome DevTools Protocol is only supported for Chromium-based browsers.
    *
+   * **NOTE** This connection is significantly lower fidelity than the Playwright protocol connection via
+   * [browserType.connect(wsEndpoint[, options])](https://playwright.dev/docs/api/class-browsertype#browser-type-connect).
+   * If you are experiencing issues or attempting to use advanced functionality, you probably want to use
+   * [browserType.connect(wsEndpoint[, options])](https://playwright.dev/docs/api/class-browsertype#browser-type-connect).
+   *
    * **Usage**
    *
    * ```js
@@ -14591,6 +14662,11 @@ export interface BrowserType<Unused = {}> {
    *
    * **NOTE** Connecting over the Chrome DevTools Protocol is only supported for Chromium-based browsers.
    *
+   * **NOTE** This connection is significantly lower fidelity than the Playwright protocol connection via
+   * [browserType.connect(wsEndpoint[, options])](https://playwright.dev/docs/api/class-browsertype#browser-type-connect).
+   * If you are experiencing issues or attempting to use advanced functionality, you probably want to use
+   * [browserType.connect(wsEndpoint[, options])](https://playwright.dev/docs/api/class-browsertype#browser-type-connect).
+   *
    * **Usage**
    *
    * ```js
@@ -14605,10 +14681,12 @@ export interface BrowserType<Unused = {}> {
    */
   connectOverCDP(options: ConnectOverCDPOptions & { wsEndpoint?: string }): Promise<Browser>;
   /**
-   * This method attaches Playwright to an existing browser instance. When connecting to another browser launched via
-   * `BrowserType.launchServer` in Node.js, the major and minor version needs to match the client version (1.2.3 → is
-   * compatible with 1.2.x).
-   * @param wsEndpoint A browser websocket endpoint to connect to.
+   * This method attaches Playwright to an existing browser instance created via `BrowserType.launchServer` in Node.js.
+   *
+   * **NOTE** The major and minor version of the Playwright instance that connects needs to match the version of
+   * Playwright that launches the browser (1.2.3 → is compatible with 1.2.x).
+   *
+   * @param wsEndpoint A Playwright browser websocket endpoint to connect to. You obtain this endpoint via `BrowserServer.wsEndpoint`.
    * @param options
    */
   connect(wsEndpoint: string, options?: ConnectOptions): Promise<Browser>;
@@ -14619,10 +14697,12 @@ export interface BrowserType<Unused = {}> {
    * @deprecated
    */
   /**
-   * This method attaches Playwright to an existing browser instance. When connecting to another browser launched via
-   * `BrowserType.launchServer` in Node.js, the major and minor version needs to match the client version (1.2.3 → is
-   * compatible with 1.2.x).
-   * @param wsEndpoint A browser websocket endpoint to connect to.
+   * This method attaches Playwright to an existing browser instance created via `BrowserType.launchServer` in Node.js.
+   *
+   * **NOTE** The major and minor version of the Playwright instance that connects needs to match the version of
+   * Playwright that launches the browser (1.2.3 → is compatible with 1.2.x).
+   *
+   * @param wsEndpoint A Playwright browser websocket endpoint to connect to. You obtain this endpoint via `BrowserServer.wsEndpoint`.
    * @param options
    */
   connect(options: ConnectOptions & { wsEndpoint?: string }): Promise<Browser>;
@@ -14672,11 +14752,22 @@ export interface BrowserType<Unused = {}> {
    * Launches browser that uses persistent storage located at
    * [`userDataDir`](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context-option-user-data-dir)
    * and returns the only context. Closing this context will automatically close the browser.
-   * @param userDataDir Path to a User Data Directory, which stores browser session data like cookies and local storage. More details for
+   * @param userDataDir Path to a User Data Directory, which stores browser session data like cookies and local storage. Pass an empty
+   * string to create a temporary directory.
+   *
+   * More details for
    * [Chromium](https://chromium.googlesource.com/chromium/src/+/master/docs/user_data_dir.md#introduction) and
-   * [Firefox](https://developer.mozilla.org/en-US/docs/Mozilla/Command_Line_Options#User_Profile). Note that Chromium's
-   * user data directory is the **parent** directory of the "Profile Path" seen at `chrome://version`. Pass an empty
-   * string to use a temporary directory instead.
+   * [Firefox](https://wiki.mozilla.org/Firefox/CommandLineOptions#User_profile). Chromium's user data directory is the
+   * **parent** directory of the "Profile Path" seen at `chrome://version`.
+   *
+   * Note that browsers do not allow launching multiple instances with the same User Data Directory.
+   *
+   * **NOTE** Chromium/Chrome: Due to recent Chrome policy changes, automating the default Chrome user profile is not
+   * supported. Pointing `userDataDir` to Chrome's main "User Data" directory (the profile used for your regular
+   * browsing) may result in pages not loading or the browser exiting. Create and use a separate directory (for example,
+   * an empty folder) as your automation profile instead. See https://developer.chrome.com/blog/remote-debugging-port
+   * for details.
+   *
    * @param options
    */
   launchPersistentContext(userDataDir: string, options?: {
@@ -14741,6 +14832,10 @@ export interface BrowserType<Unused = {}> {
      * `passphrase` property should be provided if the certificate is encrypted. The `origin` property should be provided
      * with an exact match to the request origin that the certificate is valid for.
      *
+     * Client certificate authentication is only active when at least one client certificate is provided. If you want to
+     * reject all client certificates sent by the server, you need to provide a client certificate with an `origin` that
+     * does not match any of the domains you plan to visit.
+     *
      * **NOTE** When using WebKit on macOS, accessing `localhost` will not pick up client certificates. You can make it
      * work by replacing `localhost` with `local.playwright`.
      *
@@ -14796,6 +14891,13 @@ export interface BrowserType<Unused = {}> {
     colorScheme?: null|"light"|"dark"|"no-preference";
 
     /**
+     * Emulates `'prefers-contrast'` media feature, supported values are `'no-preference'`, `'more'`. See
+     * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#page-emulate-media) for more details.
+     * Passing `null` resets emulation to system defaults. Defaults to `'no-preference'`.
+     */
+    contrast?: null|"no-preference"|"more";
+
+    /**
      * Specify device scale factor (can be thought of as dpr). Defaults to `1`. Learn more about
      * [emulating devices with device scale factor](https://playwright.dev/docs/emulation#devices).
      */
@@ -14837,6 +14939,9 @@ export interface BrowserType<Unused = {}> {
     /**
      * Firefox user preferences. Learn more about the Firefox user preferences at
      * [`about:config`](https://support.mozilla.org/en-US/kb/about-config-editor-firefox).
+     *
+     * You can also provide a path to a custom [`policies.json` file](https://mozilla.github.io/policy-templates/) via
+     * `PLAYWRIGHT_FIREFOX_POLICIES_JSON` environment variable.
      */
     firefoxUserPrefs?: { [key: string]: string|number|boolean; };
 
@@ -14888,7 +14993,7 @@ export interface BrowserType<Unused = {}> {
     /**
      * Whether to run browser in headless mode. More details for
      * [Chromium](https://developers.google.com/web/updates/2017/04/headless-chrome) and
-     * [Firefox](https://developer.mozilla.org/en-US/docs/Mozilla/Firefox/Headless_mode). Defaults to `true` unless the
+     * [Firefox](https://hacks.mozilla.org/2017/12/using-headless-mode-in-firefox/). Defaults to `true` unless the
      * [`devtools`](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-option-devtools) option is
      * `true`.
      */
@@ -14953,6 +15058,7 @@ export interface BrowserType<Unused = {}> {
 
     /**
      * Logger sink for Playwright logging.
+     * @deprecated The logs received by the logger are incomplete. Please use tracing instead.
      */
     logger?: Logger;
 
@@ -15261,6 +15367,9 @@ export interface BrowserType<Unused = {}> {
     /**
      * Firefox user preferences. Learn more about the Firefox user preferences at
      * [`about:config`](https://support.mozilla.org/en-US/kb/about-config-editor-firefox).
+     *
+     * You can also provide a path to a custom [`policies.json` file](https://mozilla.github.io/policy-templates/) via
+     * `PLAYWRIGHT_FIREFOX_POLICIES_JSON` environment variable.
      */
     firefoxUserPrefs?: { [key: string]: string|number|boolean; };
 
@@ -15282,7 +15391,7 @@ export interface BrowserType<Unused = {}> {
     /**
      * Whether to run browser in headless mode. More details for
      * [Chromium](https://developers.google.com/web/updates/2017/04/headless-chrome) and
-     * [Firefox](https://developer.mozilla.org/en-US/docs/Mozilla/Firefox/Headless_mode). Defaults to `true` unless the
+     * [Firefox](https://hacks.mozilla.org/2017/12/using-headless-mode-in-firefox/). Defaults to `true` unless the
      * [`devtools`](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-option-devtools) option is
      * `true`.
      */
@@ -15304,6 +15413,7 @@ export interface BrowserType<Unused = {}> {
 
     /**
      * Logger sink for Playwright logging.
+     * @deprecated The logs received by the logger are incomplete. Please use tracing instead.
      */
     logger?: Logger;
 
@@ -15417,7 +15527,7 @@ export interface CDPSession {
  *
  * **Mocking**
  *
- * By default, the routed WebSocket will not connect to the server. This way, you can mock entire communcation over
+ * By default, the routed WebSocket will not connect to the server. This way, you can mock entire communication over
  * the WebSocket. Here is an example that responds to a `"request"` with a `"response"`.
  *
  * ```js
@@ -16608,6 +16718,13 @@ export interface AndroidDevice {
     colorScheme?: null|"light"|"dark"|"no-preference";
 
     /**
+     * Emulates `'prefers-contrast'` media feature, supported values are `'no-preference'`, `'more'`. See
+     * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#page-emulate-media) for more details.
+     * Passing `null` resets emulation to system defaults. Defaults to `'no-preference'`.
+     */
+    contrast?: null|"no-preference"|"more";
+
+    /**
      * Specify device scale factor (can be thought of as dpr). Defaults to `1`. Learn more about
      * [emulating devices with device scale factor](https://playwright.dev/docs/emulation#devices).
      */
@@ -16699,6 +16816,7 @@ export interface AndroidDevice {
 
     /**
      * Logger sink for Playwright logging.
+     * @deprecated The logs received by the logger are incomplete. Please use tracing instead.
      */
     logger?: Logger;
 
@@ -17431,6 +17549,10 @@ export interface APIRequest {
      * `passphrase` property should be provided if the certificate is encrypted. The `origin` property should be provided
      * with an exact match to the request origin that the certificate is valid for.
      *
+     * Client certificate authentication is only active when at least one client certificate is provided. If you want to
+     * reject all client certificates sent by the server, you need to provide a client certificate with an `origin` that
+     * does not match any of the domains you plan to visit.
+     *
      * **NOTE** When using WebKit on macOS, accessing `localhost` will not pick up client certificates. You can make it
      * work by replacing `localhost` with `local.playwright`.
      *
@@ -17483,6 +17605,12 @@ export interface APIRequest {
     extraHTTPHeaders?: { [key: string]: string; };
 
     /**
+     * Whether to throw on response codes other than 2xx and 3xx. By default response object is returned for all status
+     * codes.
+     */
+    failOnStatusCode?: boolean;
+
+    /**
      * Credentials for [HTTP authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication). If no
      * origin is specified, the username and password are sent to any servers upon unauthorized responses.
      */
@@ -17510,6 +17638,13 @@ export interface APIRequest {
      * Whether to ignore HTTPS errors when sending network requests. Defaults to `false`.
      */
     ignoreHTTPSErrors?: boolean;
+
+    /**
+     * Maximum number of request redirects that will be followed automatically. An error will be thrown if the number is
+     * exceeded. Defaults to `20`. Pass `0` to not follow redirects. This can be overwritten for each request
+     * individually.
+     */
+    maxRedirects?: number;
 
     /**
      * Network proxy settings.
@@ -18352,6 +18487,11 @@ export interface APIRequestContext {
    */
   storageState(options?: {
     /**
+     * Set to `true` to include IndexedDB in the storage state snapshot.
+     */
+    indexedDB?: boolean;
+
+    /**
      * The file path to save the storage state to. If
      * [`path`](https://playwright.dev/docs/api/class-apirequestcontext#api-request-context-storage-state-option-path) is
      * a relative path, then it is resolved relative to current working directory. If no path is provided, storage state
@@ -18729,12 +18869,7 @@ export interface ConsoleMessage {
    */
   text(): string;
 
-  /**
-   * One of the following values: `'log'`, `'debug'`, `'info'`, `'error'`, `'warning'`, `'dir'`, `'dirxml'`, `'table'`,
-   * `'trace'`, `'clear'`, `'startGroup'`, `'startGroupCollapsed'`, `'endGroup'`, `'assert'`, `'profile'`,
-   * `'profileEnd'`, `'count'`, `'timeEnd'`.
-   */
-  type(): string;
+  type(): "log"|"debug"|"info"|"error"|"warning"|"dir"|"dirxml"|"table"|"trace"|"clear"|"startGroup"|"startGroupCollapsed"|"endGroup"|"assert"|"profile"|"profileEnd"|"count"|"timeEnd";
 }
 
 /**
@@ -20039,6 +20174,10 @@ export interface Logger {
 /**
  * The Mouse class operates in main-frame CSS pixels relative to the top-left corner of the viewport.
  *
+ * **NOTE** If you want to debug where the mouse moved, you can use the [Trace viewer](https://playwright.dev/docs/trace-viewer-intro) or
+ * [Playwright Inspector](https://playwright.dev/docs/running-tests). A red dot showing the location of the mouse will be shown for every
+ * mouse action.
+ *
  * Every `page` object has its own Mouse, accessible with
  * [page.mouse](https://playwright.dev/docs/api/class-page#page-mouse).
  *
@@ -20712,6 +20851,11 @@ export interface Route {
    * request to the network, other matching handlers won't be invoked. Use
    * [route.fallback([options])](https://playwright.dev/docs/api/class-route#route-fallback) If you want next matching
    * handler in the chain to be invoked.
+   *
+   * **NOTE** The `Cookie` header cannot be overridden using this method. If a value is provided, it will be ignored,
+   * and the cookie will be loaded from the browser's cookie store. To set custom cookies, use
+   * [browserContext.addCookies(cookies)](https://playwright.dev/docs/api/class-browsercontext#browser-context-add-cookies).
+   *
    * @param options
    */
   continue(options?: {
@@ -21049,6 +21193,9 @@ export interface Selectors {
 /**
  * The Touchscreen class operates in main-frame CSS pixels relative to the top-left corner of the viewport. Methods on
  * the touchscreen can only be used in browser contexts that have been initialized with `hasTouch` set to true.
+ *
+ * This class is limited to emulating tap gestures. For examples of other gestures simulated by manually dispatching
+ * touch events, see the [emulating legacy touch events](https://playwright.dev/docs/touch-events) page.
  */
 export interface Touchscreen {
   /**
@@ -21069,6 +21216,15 @@ export interface Touchscreen {
  * API for collecting and saving Playwright traces. Playwright traces can be opened in
  * [Trace Viewer](https://playwright.dev/docs/trace-viewer) after Playwright script runs.
  *
+ * **NOTE** You probably want to
+ * [enable tracing in your config file](https://playwright.dev/docs/api/class-testoptions#test-options-trace) instead
+ * of using `context.tracing`.
+ *
+ * The `context.tracing` API captures browser operations and network activity, but it doesn't record test assertions
+ * (like `expect` calls). We recommend
+ * [enabling tracing through Playwright Test configuration](https://playwright.dev/docs/api/class-testoptions#test-options-trace),
+ * which includes those assertions and provides a more complete trace for debugging test failures.
+ *
  * Start recording a trace before performing actions. At the end, stop tracing and save it to a file.
  *
  * ```js
@@ -21077,6 +21233,7 @@ export interface Touchscreen {
  * await context.tracing.start({ screenshots: true, snapshots: true });
  * const page = await context.newPage();
  * await page.goto('https://playwright.dev');
+ * expect(page.url()).toBe('https://playwright.dev');
  * await context.tracing.stop({ path: 'trace.zip' });
  * ```
  *
@@ -21124,12 +21281,22 @@ export interface Tracing {
   /**
    * Start tracing.
    *
+   * **NOTE** You probably want to
+   * [enable tracing in your config file](https://playwright.dev/docs/api/class-testoptions#test-options-trace) instead
+   * of using `Tracing.start`.
+   *
+   * The `context.tracing` API captures browser operations and network activity, but it doesn't record test assertions
+   * (like `expect` calls). We recommend
+   * [enabling tracing through Playwright Test configuration](https://playwright.dev/docs/api/class-testoptions#test-options-trace),
+   * which includes those assertions and provides a more complete trace for debugging test failures.
+   *
    * **Usage**
    *
    * ```js
    * await context.tracing.start({ screenshots: true, snapshots: true });
    * const page = await context.newPage();
    * await page.goto('https://playwright.dev');
+   * expect(page.url()).toBe('https://playwright.dev');
    * await context.tracing.stop({ path: 'trace.zip' });
    * ```
    *
@@ -21299,8 +21466,11 @@ export interface WebError {
 }
 
 /**
- * The [WebSocket](https://playwright.dev/docs/api/class-websocket) class represents websocket connections in the
- * page.
+ * The [WebSocket](https://playwright.dev/docs/api/class-websocket) class represents WebSocket connections within a
+ * page. It provides the ability to inspect and manipulate the data being transmitted and received.
+ *
+ * If you want to intercept or modify WebSocket frames, consider using
+ * [WebSocketRoute](https://playwright.dev/docs/api/class-websocketroute).
  */
 export interface WebSocket {
   /**
@@ -21612,6 +21782,9 @@ export interface LaunchOptions {
   /**
    * Firefox user preferences. Learn more about the Firefox user preferences at
    * [`about:config`](https://support.mozilla.org/en-US/kb/about-config-editor-firefox).
+   *
+   * You can also provide a path to a custom [`policies.json` file](https://mozilla.github.io/policy-templates/) via
+   * `PLAYWRIGHT_FIREFOX_POLICIES_JSON` environment variable.
    */
   firefoxUserPrefs?: { [key: string]: string|number|boolean; };
 
@@ -21633,7 +21806,7 @@ export interface LaunchOptions {
   /**
    * Whether to run browser in headless mode. More details for
    * [Chromium](https://developers.google.com/web/updates/2017/04/headless-chrome) and
-   * [Firefox](https://developer.mozilla.org/en-US/docs/Mozilla/Firefox/Headless_mode). Defaults to `true` unless the
+   * [Firefox](https://hacks.mozilla.org/2017/12/using-headless-mode-in-firefox/). Defaults to `true` unless the
    * [`devtools`](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-option-devtools) option is
    * `true`.
    */
@@ -21648,6 +21821,7 @@ export interface LaunchOptions {
 
   /**
    * Logger sink for Playwright logging.
+   * @deprecated The logs received by the logger are incomplete. Please use tracing instead.
    */
   logger?: Logger;
 
@@ -21697,7 +21871,7 @@ export interface LaunchOptions {
 
 export interface ConnectOverCDPOptions {
   /**
-   * Deprecated, use the first argument instead. Optional.
+   * @deprecated Use the first argument instead.
    */
   endpointURL?: string;
 
@@ -21708,6 +21882,7 @@ export interface ConnectOverCDPOptions {
 
   /**
    * Logger sink for Playwright logging. Optional.
+   * @deprecated The logs received by the logger are incomplete. Please use tracing instead.
    */
   logger?: Logger;
 
@@ -21749,6 +21924,7 @@ export interface ConnectOptions {
 
   /**
    * Logger sink for Playwright logging. Optional.
+   * @deprecated The logs received by the logger are incomplete. Please use tracing instead.
    */
   logger?: Logger;
 
@@ -21785,7 +21961,8 @@ export interface LocatorScreenshotOptions {
    * Specify locators that should be masked when the screenshot is taken. Masked elements will be overlaid with a pink
    * box `#FF00FF` (customized by
    * [`maskColor`](https://playwright.dev/docs/api/class-locator#locator-screenshot-option-mask-color)) that completely
-   * covers its bounding box.
+   * covers its bounding box. The mask is also applied to invisible elements, see
+   * [Matching only visible elements](https://playwright.dev/docs/locators#matching-only-visible-elements) to disable that.
    */
   mask?: Array<Locator>;
 
@@ -21910,6 +22087,10 @@ export interface BrowserContextOptions {
    * `passphrase` property should be provided if the certificate is encrypted. The `origin` property should be provided
    * with an exact match to the request origin that the certificate is valid for.
    *
+   * Client certificate authentication is only active when at least one client certificate is provided. If you want to
+   * reject all client certificates sent by the server, you need to provide a client certificate with an `origin` that
+   * does not match any of the domains you plan to visit.
+   *
    * **NOTE** When using WebKit on macOS, accessing `localhost` will not pick up client certificates. You can make it
    * work by replacing `localhost` with `local.playwright`.
    *
@@ -21963,6 +22144,13 @@ export interface BrowserContextOptions {
    * Passing `null` resets emulation to system defaults. Defaults to `'light'`.
    */
   colorScheme?: null|"light"|"dark"|"no-preference";
+
+  /**
+   * Emulates `'prefers-contrast'` media feature, supported values are `'no-preference'`, `'more'`. See
+   * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#page-emulate-media) for more details.
+   * Passing `null` resets emulation to system defaults. Defaults to `'no-preference'`.
+   */
+  contrast?: null|"no-preference"|"more";
 
   /**
    * Specify device scale factor (can be thought of as dpr). Defaults to `1`. Learn more about
@@ -22023,6 +22211,7 @@ export interface BrowserContextOptions {
 
   /**
    * Logger sink for Playwright logging.
+   * @deprecated The logs received by the logger are incomplete. Please use tracing instead.
    */
   logger?: Logger;
 
@@ -22210,12 +22399,12 @@ export interface BrowserContextOptions {
       sameSite: "Strict"|"Lax"|"None";
     }>;
 
-    /**
-     * localStorage to set for context
-     */
     origins: Array<{
       origin: string;
 
+      /**
+       * localStorage to set for context
+       */
       localStorage: Array<{
         name: string;
 
@@ -22343,6 +22532,8 @@ export interface Cookie {
   secure: boolean;
 
   sameSite: "Strict"|"Lax"|"None";
+
+  partitionKey?: string;
 }
 
 interface PageWaitForSelectorOptions {
@@ -22443,7 +22634,8 @@ export interface PageScreenshotOptions {
    * Specify locators that should be masked when the screenshot is taken. Masked elements will be overlaid with a pink
    * box `#FF00FF` (customized by
    * [`maskColor`](https://playwright.dev/docs/api/class-page#page-screenshot-option-mask-color)) that completely covers
-   * its bounding box.
+   * its bounding box. The mask is also applied to invisible elements, see
+   * [Matching only visible elements](https://playwright.dev/docs/locators#matching-only-visible-elements) to disable that.
    */
   mask?: Array<Locator>;
 
@@ -22518,14 +22710,22 @@ type Devices = {
   "Galaxy S8 landscape": DeviceDescriptor;
   "Galaxy S9+": DeviceDescriptor;
   "Galaxy S9+ landscape": DeviceDescriptor;
+  "Galaxy S24": DeviceDescriptor;
+  "Galaxy S24 landscape": DeviceDescriptor;
+  "Galaxy A55": DeviceDescriptor;
+  "Galaxy A55 landscape": DeviceDescriptor;
   "Galaxy Tab S4": DeviceDescriptor;
   "Galaxy Tab S4 landscape": DeviceDescriptor;
+  "Galaxy Tab S9": DeviceDescriptor;
+  "Galaxy Tab S9 landscape": DeviceDescriptor;
   "iPad (gen 5)": DeviceDescriptor;
   "iPad (gen 5) landscape": DeviceDescriptor;
   "iPad (gen 6)": DeviceDescriptor;
   "iPad (gen 6) landscape": DeviceDescriptor;
   "iPad (gen 7)": DeviceDescriptor;
   "iPad (gen 7) landscape": DeviceDescriptor;
+  "iPad (gen 11)": DeviceDescriptor;
+  "iPad (gen 11) landscape": DeviceDescriptor;
   "iPad Mini": DeviceDescriptor;
   "iPad Mini landscape": DeviceDescriptor;
   "iPad Pro 11": DeviceDescriptor;
@@ -22544,6 +22744,8 @@ type Devices = {
   "iPhone 8 Plus landscape": DeviceDescriptor;
   "iPhone SE": DeviceDescriptor;
   "iPhone SE landscape": DeviceDescriptor;
+  "iPhone SE (3rd gen)": DeviceDescriptor;
+  "iPhone SE (3rd gen) landscape": DeviceDescriptor;
   "iPhone X": DeviceDescriptor;
   "iPhone X landscape": DeviceDescriptor;
   "iPhone XR": DeviceDescriptor;
