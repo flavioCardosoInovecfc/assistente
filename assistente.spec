@@ -5,13 +5,14 @@ a = Analysis(
     ['assistente.py'],
     pathex=[],
     binaries=[],
-    datas=[('C:\\Users\\Flavio\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\playwright_stealth\\js', 'playwright_stealth/js')],
+    datas=[],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
     noarchive=False,
+    optimize=0,
 )
 pyz = PYZ(a.pure)
 
