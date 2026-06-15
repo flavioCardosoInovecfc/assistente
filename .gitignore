@@ -1,5 +1,11 @@
 # Ignorar tudo
 *
 !.gitignore
+!package.json
+!package-lock.json
+!assistente/
+!assistente/**
 !dist/
 !dist/**
+!img/
+!img/**
