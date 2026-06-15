@@ -18,6 +18,7 @@ class AutomatizacaoPR(Banco):
         self.hasSinc = informacao
         self.user_inove = informacao['user_inove']
         self.verificaSSL = verificaSSL
+        self.primeira_conexao = True  # Adicione isto aqui
         self.acessoDetran = True
         self.mapeamento()
         if (self.hasSinc['pwd_detran']):
@@ -48,6 +49,8 @@ class AutomatizacaoPR(Banco):
         return None
 
     def on_open(self):
+        import shutil
+
         # --- User-Agents realistas ---
         user_agents = [
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -56,7 +59,7 @@ class AutomatizacaoPR(Banco):
         ]
         random_user_agent = random.choice(user_agents)
 
-        # --- Args do Chrome (corrigido --disable-features em um único argumento) ---
+        # --- Args do Chrome ---
         args = [
             f"--user-agent={random_user_agent}",
             "--disable-infobars",
@@ -78,26 +81,27 @@ class AutomatizacaoPR(Banco):
         os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(
             BASE_DIR, "playwright_stealth/js")
 
-        # --- Perfil persistente dedicado da automação ---
+        # --- Limpa a pasta de perfil antes de iniciar ---
         user_data_dir = os.path.join(BASE_DIR, "chrome-profile")
+        if os.path.exists(user_data_dir):
+            try:
+                shutil.rmtree(user_data_dir)
+            except Exception as e:
+                print(f"Erro ao limpar pasta de perfil: {e}")
+
+        # --- Cria novo diretório ---
         default_dir = os.path.join(user_data_dir, "Default")
         os.makedirs(default_dir, exist_ok=True)
 
-        # --- Preferências: desativa Password Manager e Leak Detection (remove o alerta do Chrome) ---
+        # --- Preferências: desativa Password Manager e Leak Detection ---
         prefs_path = os.path.join(default_dir, "Preferences")
-        prefs = {}
-        if os.path.exists(prefs_path):
-            try:
-                with open(prefs_path, "r", encoding="utf-8") as f:
-                    prefs = json.load(f)
-            except Exception:
-                prefs = {}
-
-        prefs.setdefault("profile", {})
-        prefs["profile"]["password_manager_enabled"] = False
-        prefs["profile"]["password_manager_leak_detection"] = False
-        # não oferecer salvar senhas
-        prefs["credentials_enable_service"] = False
+        prefs = {
+            "profile": {
+                "password_manager_enabled": False,
+                "password_manager_leak_detection": False
+            },
+            "credentials_enable_service": False
+        }
 
         with open(prefs_path, "w", encoding="utf-8") as f:
             json.dump(prefs, f, ensure_ascii=False)
@@ -105,12 +109,13 @@ class AutomatizacaoPR(Banco):
         # --- Lança o Chrome com perfil persistente ---
         with sync_playwright() as p:
             self.context = p.chromium.launch_persistent_context(
-                user_data_dir,     # raiz do perfil (NÃO inclua /Default)
+                user_data_dir,
                 channel="chrome",
                 headless=False,
                 args=args
             )
             self.pagina = self.context.new_page()
+
             # Evita travar em alert()/confirm() e aplica stealth
             try:
                 self.pagina.on("dialog", lambda d: d.dismiss())
@@ -125,8 +130,7 @@ class AutomatizacaoPR(Banco):
                 self.pagina.goto(self.url, wait_until="domcontentloaded")
                 acesso = self.fazLogin()
                 if acesso == "OK":
-                    print(
-                        f"**** Iniciando o envio da placa {self.placaCFC} ****")
+                    print(f"**** Iniciando o envio da placa {self.placaCFC} ****")
                     self.menu()
                     self.startSinc()
                     print(f"**** Fim do envio da placa {self.placaCFC} ****")
@@ -137,7 +141,6 @@ class AutomatizacaoPR(Banco):
                 print("##### Perda de comunicação #####")
                 print(repr(e))
             finally:
-                # encerra o contexto corretamente (Playwright não tem quit())
                 try:
                     self.context.close()
                 except Exception:
@@ -161,14 +164,23 @@ class AutomatizacaoPR(Banco):
             page.on("dialog", lambda d: d.dismiss())
         except Exception:
             pass
-        page.wait_for_load_state("domcontentloaded", timeout=20000)
+        page.wait_for_load_state("domcontentloaded", timeout=10000)
 
         # 1) obtém o iframe 'content'; se não houver, usa a própria página
+        if self.primeira_conexao:
+            print("Verificando conexão..........")
+            self.primeira_conexao = False
+        else:
+            print("Preparando a próxima placa..........")
+
         target = self._get_target_frame(timeout_ms=10000) or page
-        self.myFrame = target  # mantém compatível com o restante do seu fluxo
+        self.myFrame = target
 
         # 2) Preenche os campos (com espera) e clica
         try:
+            print("Conexão estabelecida.....")
+            self.myFrame.locator(self.btnCentral).click(timeout=15000)
+
             self.myFrame.locator(self.input_user).wait_for(
                 state="visible", timeout=15000)
             self.myFrame.fill(
@@ -201,7 +213,6 @@ class AutomatizacaoPR(Banco):
             self.acessoDetran = False
             self.acessoNegado()
             return "FAIL"
-
     def getPlacasByCFC(self):
         self.contador = 0
         placas = self.getPlacas()
@@ -515,7 +526,7 @@ class AutomatizacaoPR(Banco):
         # self.myFrame.locator(self.oCMenu203).click()
         # self.myFrame.locator(self.oCMenu1139).click()
         self.myFrame.evaluate(
-            '() => abrirUrl("https://www.habilitacao.detran.pr.gov.br:443/detran-habilitacao/agendarVeiculoAluno.do?action=iniciarProcesso")'
+            '() => abrirUrl("https://www.habilitacao.detran.pr.gov.br/detran-habilitacao/agendarVeiculoAluno.do?action=iniciarProcesso")'
         )
 
     def _send_iframe(self, obj):
@@ -561,11 +572,12 @@ class AutomatizacaoPR(Banco):
 
         self.iframe = ('xpath=/html/frameset')
         self.iframe_form = ('xpath=/html/frameset/frame')
-        self.input_user = ('xpath=//*[@id="CHAVE"]')
-        self.input_pwd = ('xpath=//*[@id="CHAVE_ENCRIPT"]')
+        self.btnCentral = ('//*[@id="btnCentral"]')
+        self.input_user = ('//*[@id="attribute_central"]')
+        self.input_pwd = ('//*[@id="password"]')
+        self.botao_entrar = ('//*[@id="btn-central-acessar"]')
+
         self.btnVoltar = ('xpath=//*[@id="conteudo_corpo"]/div[2]/input[2]')
-        self.botao_entrar = (
-            'xpath=//*[@id="formLogin"]/table/tbody/tr[1]/td/table/tbody/tr[3]/td[2]/input')
         self.oCMenu1136 = ('xpath=//*[@id="oCMenu__1136"]')
         self.oCMenu203 = ('xpath=//*[@id="oCMenu__188"]')
         self.oCMenu1139 = ('xpath=//*[@id="oCMenu__1139"]')
