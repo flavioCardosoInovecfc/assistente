@@ -1,5 +1,6 @@
 from tkinter import *
 from tkinter import ttk
+import tkinter
 
 from PIL import Image, ImageTk, ImageSequence
 from functions import *
@@ -83,18 +84,16 @@ class View(Functions):
             "arial", 10, "bold"), fg="white", command=self.trocarUsuario)
         self.bt_acessar.place(relx=0, rely=0.45, relwidth=0.15, relheight=0.5)
 
+        # Obtém a versão do Tkinter
+        versao_tk = '15.06.26'
+
         self.tj = Label(self.frame, text="Conectado no Terminal ( " +
-                        self.infoLogin['terminal']+" )", bg="green", fg="white", font=("arial", 14, 'bold'))
+                        self.infoLogin['terminal']+" ) | v"+str(versao_tk), bg="green", fg="white", font=("arial", 14, 'bold'))
         self.tj.place(relx=0, rely=0, relwidth=1, relheight=0.4)
 
         self.lb_rs = Label(self.frame, text=self.infoLogin['cnpj'] + " | "+self.infoLogin['razao_social'] +
                            " | "+self.infoLogin['usuario'] + " | "+self.infoLogin['uf'], bg="white", font=("arial", 10, "bold"))
         self.lb_rs.place(relx=0.175, rely=0.6, relwidth=0.65, relheight=0.2)
-
-        # self.bt_manual = Button(self.frame, text="Busca Manual", bd=2, bg="green", font=(
-        #   "arial", 10, "bold"), fg="white", command=self.buscaManual)
-        # self.bt_manual.place(relx=0.85, rely=0.45,
-        #                    relwidth=0.15, relheight=0.5)
 
     def frames_gif(self, estado):
 
