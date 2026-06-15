@@ -85,7 +85,7 @@ class View(Functions):
         self.bt_acessar.place(relx=0, rely=0.45, relwidth=0.15, relheight=0.5)
 
         # Obtém a versão do Tkinter
-        versao_tk = ' 15.06.26'
+        versao_tk = '15.06.26'
 
         self.tj = Label(self.frame, text="Conectado no Terminal ( " +
                         self.infoLogin['terminal']+" ) | v"+str(versao_tk), bg="green", fg="white", font=("arial", 14, 'bold'))
