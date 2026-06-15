@@ -1,11 +1,5 @@
-venv/
-__pycache__/
-.vscode/
-build/
-inovecfc.db
-dist/
-
-cache/
-profile/
-.local-browsers/
-
+# Ignorar tudo
+*
+!.gitignore
+!dist/
+!dist/**
